@@ -744,11 +744,11 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform, sessi
         const isWget = /\bwget\b/i.test(s);
 
         // Check for file output flags
-        // fd duplication (2>&1, >&2) is not a file write; strip it before the `>` check
-        const noFdDup = s.replace(/\d*>&\d+/g, "");
+        // Only stdout redirects count: fd duplication (2>&1, >&2) and stderr-to-file (2>f) are not stdout file writes
+        const stdoutOnly = s.replace(/\d*>&\d+/g, "").replace(/(^|\s)2>>?\s*\S+/g, "$1");
         const hasFileOutput = isCurl
-          ? /\s(-o|--output)\s/.test(s) || />>?/.test(noFdDup)
-          : /\s(-O|--output-document)\s/.test(s) || />>?/.test(noFdDup);
+          ? /\s(-o|--output)\s/.test(s) || />>?/.test(stdoutOnly)
+          : /\s(-O|--output-document)\s/.test(s) || />>?/.test(stdoutOnly);
 
         if (!hasFileOutput) return true; // no file output → dangerous
 

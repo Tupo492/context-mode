@@ -189,6 +189,29 @@ describe("routePreToolUse", () => {
       expect(result).toBeNull();
     });
 
+    it("blocks curl -s piped with 2>/dev/null (stderr redirect is not a file write)", () => {
+      const result = routePreToolUse("Bash", {
+        command: "curl -s https://example.com 2>/dev/null | head -50",
+      });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe("modify");
+    });
+
+    it("blocks curl -s piped with 2> file (stderr to file leaves stdout in context)", () => {
+      const result = routePreToolUse("Bash", {
+        command: "curl -s https://example.com 2> /tmp/err.txt | head -50",
+      });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe("modify");
+    });
+
+    it("allows curl -s > file 2>/dev/null (stdout to file, stderr discarded)", () => {
+      const result = routePreToolUse("Bash", {
+        command: "curl -s https://example.com/data.json > /tmp/data.json 2>/dev/null",
+      });
+      expect(result).toBeNull();
+    });
+
     it("blocks curl -o - (stdout alias)", () => {
       const result = routePreToolUse("Bash", {
         command: "curl -s -o - https://example.com",
