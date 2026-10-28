@@ -666,6 +666,8 @@ function getPlatformSettingsPath(platform) {
  * @param {boolean} [options.mcpToolsAvailable=true] - False when the current
  *   caller context cannot invoke ctx_* MCP tools even though an MCP server is
  *   live on the machine (Claude Code fixed-tool subagents — #794).
+ * @param {(bareTool: string) => string} [options.toolNamer] - Overrides the
+ *   platform's MCP tool naming for hosts that register ctx_* tools natively.
  */
 export function routePreToolUse(toolName, toolInput, projectDir, platform, sessionId, options = {}) {
   const mcpToolsAvailable = options.mcpToolsAvailable !== false;
@@ -688,7 +690,7 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform, sessi
   }
 
   // Build platform-specific tool namer (defaults to claude-code for backward compat)
-  const t = createToolNamer(platform || "claude-code");
+  const t = options.toolNamer ?? createToolNamer(platform || "claude-code");
 
   // Build platform-specific guidance/routing content
   const routingBlock = platform ? createRoutingBlock(t) : ROUTING_BLOCK;
@@ -742,9 +744,11 @@ export function routePreToolUse(toolName, toolInput, projectDir, platform, sessi
         const isWget = /\bwget\b/i.test(s);
 
         // Check for file output flags
+        // fd duplication (2>&1, >&2) is not a file write; strip it before the `>` check
+        const noFdDup = s.replace(/\d*>&\d+/g, "");
         const hasFileOutput = isCurl
-          ? /\s(-o|--output)\s/.test(s) || /\s*>\s*/.test(s) || /\s*>>\s*/.test(s)
-          : /\s(-O|--output-document)\s/.test(s) || /\s*>\s*/.test(s) || /\s*>>\s*/.test(s);
+          ? /\s(-o|--output)\s/.test(s) || />>?/.test(noFdDup)
+          : /\s(-O|--output-document)\s/.test(s) || />>?/.test(noFdDup);
 
         if (!hasFileOutput) return true; // no file output → dangerous
 

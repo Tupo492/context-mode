@@ -23,7 +23,7 @@
 
 import { dirname, resolve, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 
 import { resolveSessionDbPath, SessionDB } from "../../session/db.js";
 import { extractEvents, extractUserEvents, parseOpencodeUsage, buildAgentUsageEvent } from "../../session/extract.js";
@@ -33,6 +33,7 @@ import type { SessionEvent } from "../../types.js";
 import { AdapterPlatformType, OpenCodeAdapter } from "./index.js";
 import { PLATFORM_ENV_VARS } from "../detect.js";
 import { zod3ShapeToV4 } from "./zod3tov4.js";
+import z from "zod/v4";
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -279,17 +280,27 @@ async function createContextModePlugin(ctx: PluginContext) {
   // the .mjs ESM islands isolated from the .ts compile graph.
   const routingBlockPath = resolve(buildDir, "..", "..", "..", "hooks", "routing-block.mjs");
   const routingBlockMod = await import(pathToFileURL(routingBlockPath).href);
-  const toolNamingPath = resolve(buildDir, "..", "..", "..", "hooks", "core", "tool-naming.mjs");
-  const toolNamingMod = await import(pathToFileURL(toolNamingPath).href);
   const autoInjectionPath = resolve(buildDir, "..", "..", "..", "hooks", "auto-injection.mjs");
   const autoInjectionMod = await import(pathToFileURL(autoInjectionPath).href);
 
-  // Pre-build the routing block once per process — it is platform-specific
-  // (tool naming differs between opencode and kilo) but does NOT depend on
-  // sessionID, so we cache it. createToolNamer accepts both "opencode" and
-  // "kilo" per hooks/core/tool-naming.mjs:25-26.
-  const toolNamer = toolNamingMod.createToolNamer(platform);
+  // Pre-build the routing block once per process. Tools are registered natively
+  // under their bare names (no MCP server prefix), so the namer must not add one.
+  const toolNamer = (bareTool: string) => bareTool;
   const routingBlock: string = routingBlockMod.createRoutingBlock(toolNamer);
+
+  // Curl/wget redirects only fire while an MCP server advertises readiness via
+  // a sentinel file. This plugin replaces that server, so it advertises itself.
+  const mcpReadyPath = resolve(buildDir, "..", "..", "..", "hooks", "core", "mcp-ready.mjs");
+  const mcpReady = await import(pathToFileURL(mcpReadyPath).href);
+  const mcpSentinel: string = mcpReady.sentinelPathForPid(process.pid);
+  const writeMcpSentinel = () => {
+    try { writeFileSync(mcpSentinel, String(process.pid)); } catch { /* best effort */ }
+  };
+  writeMcpSentinel();
+  setInterval(writeMcpSentinel, 30_000).unref();
+  process.once("exit", () => {
+    try { unlinkSync(mcpSentinel); } catch { /* best effort */ }
+  });
 
   // Initialize per-process state. We do NOT fabricate a sessionId here —
   // OpenCode/Kilo provide the real `input.sessionID` on every hook, and a
@@ -490,7 +501,7 @@ async function createContextModePlugin(ctx: PluginContext) {
 
       let decision;
       try {
-        decision = routing.routePreToolUse(toolName, toolInput, projectDir, platform);
+        decision = routing.routePreToolUse(toolName, toolInput, projectDir, platform, undefined, { toolNamer });
       } catch {
         return; // Routing failure → allow passthrough
       }
@@ -751,10 +762,87 @@ async function createContextModePlugin(ctx: PluginContext) {
   };
 }
 
+// ── OpenCode V2 (Plugin.define + setup(ctx)) ─────────────
+// V2 hosts read `setup` from the default export and ignore `server`. Reuse the
+// V1 hook implementations above and translate V2 events into their inputs.
+
+type V2Context = {
+  location: { directory: string };
+  tool: {
+    transform: (edit: (editor: { add: (tool: Record<string, unknown>) => void }) => void) => Promise<unknown>;
+    hook: (name: "execute.before" | "execute.after", cb: (event: any) => Promise<void>) => Promise<unknown>;
+  };
+  session: {
+    hook: (name: "prompt" | "context" | "compaction", cb: (event: any) => Promise<void>) => Promise<unknown>;
+  };
+};
+
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((c) => (c?.type === "text" ? c.text : "")).join("\n");
+}
+
+async function setupV2(ctx: V2Context) {
+  const directory = ctx.location.directory;
+  const hooks = await createContextModePlugin({
+    directory,
+    client: { app: { log: async () => {} } },
+  });
+
+  await ctx.tool.transform((editor) => {
+    for (const [name, def] of Object.entries(hooks.tool)) {
+      editor.add({
+        name,
+        description: def.description,
+        input: z.toJSONSchema(z.object(def.args as Record<string, z.ZodType>), { io: "input", unrepresentable: "any" }),
+        execute: async (input: Record<string, unknown>, c: { sessionID: string; messageID: string; agent: string }) => {
+          const r = await def.execute(input, { ...c, directory });
+          return { content: typeof r === "string" ? r : r.output };
+        },
+      });
+    }
+  });
+
+  await ctx.session.hook("prompt", async (e) => {
+    await hooks["chat.message"]({ sessionID: e.sessionID }, { message: {}, parts: [{ type: "text", text: e.prompt.text }] });
+  });
+
+  await ctx.tool.hook("execute.before", async (e) => {
+    await hooks["tool.execute.before"]({ tool: e.tool, sessionID: e.sessionID, callID: e.id }, { args: e.input });
+  });
+
+  await ctx.tool.hook("execute.after", async (e) => {
+    if (e.status !== "completed") return;
+    await hooks["tool.execute.after"](
+      { tool: e.tool, sessionID: e.sessionID, callID: e.id, args: e.input },
+      {
+        title: e.tool,
+        output: typeof e.result?.output === "string" ? e.result.output : textOf(e.result?.content),
+        metadata: e.result?.metadata,
+      },
+    );
+  });
+
+  await ctx.session.hook("context", async (e) => {
+    const system: string[] = e.system.map((part: { text: string }) => part.text);
+    await hooks["experimental.chat.system.transform"]({ sessionID: e.sessionID, model: e.model }, { system });
+    const parts = new Map(e.system.map((part: { text: string }) => [part.text, part]));
+    e.system.splice(0, e.system.length, ...system.map((text) => parts.get(text) ?? { type: "text", text }));
+  });
+
+  await ctx.session.hook("compaction", async (e) => {
+    const output = { context: [] as string[] };
+    await hooks["experimental.session.compacting"]({ sessionID: e.sessionID }, output);
+    for (const text of output.context) e.system.push({ type: "text", text });
+  });
+}
+
 // ── Exports ──────────────────────────────────────────────
 // KiloCode PluginModule: default export with { server } shape
+// OpenCode V1: server(); OpenCode V2: setup(ctx)
 // OpenCode compat: named export for direct import("context-mode/plugin")
-export default { id:"context-mode", server: createContextModePlugin };
+export default { id:"context-mode", server: createContextModePlugin, setup: setupV2 };
 export { createContextModePlugin as ContextModePlugin };
 // Test surface — exported for unit testing the quorum substring fix (#487).
 export { systemHasRoutingInstructions, ROUTING_MARKERS };
