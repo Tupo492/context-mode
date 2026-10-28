@@ -1257,7 +1257,7 @@ describe("ctx_index: projectRoot path resolution (#365)", () => {
     const cleanEnv = { ...process.env };
     for (const key of Object.keys(cleanEnv)) {
       if (
-        /^(CLAUDE|CODEX|GEMINI|VSCODE|CURSOR|OPENCODE|KILO|KIRO|PI|OMP|ZED|QWEN|KIMI|ANTIGRAVITY|OPENCLAW|COPILOT)_/.test(key) ||
+        /^(CLAUDE|CODEX|GEMINI|VSCODE|CURSOR|OPENCODE|KILO|KIRO|PI|OMP|ZED|QWEN|KIMI|ANTIGRAVITY|OPENCLAW|COPILOT)(_|$)/.test(key) ||
         key === "CONTEXT_MODE_PLATFORM" ||
         key === "CONTEXT_MODE_PROJECT_DIR"
       ) {
