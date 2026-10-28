@@ -167,6 +167,28 @@ describe("routePreToolUse", () => {
       expect(result).toBeNull();
     });
 
+    it("blocks curl -s piped with 2>&1 (stderr merge is not a file write)", () => {
+      const result = routePreToolUse("Bash", {
+        command: "curl -s https://example.com 2>&1 | head -50",
+      });
+      expect(result).not.toBeNull();
+      expect(result!.action).toBe("modify");
+    });
+
+    it("allows curl -s > file 2>&1 (file write with stderr merged)", () => {
+      const result = routePreToolUse("Bash", {
+        command: "curl -s https://example.com/data.json > /tmp/data.json 2>&1",
+      });
+      expect(result).toBeNull();
+    });
+
+    it("allows curl -s -o file 2>&1 (output flag with stderr merged)", () => {
+      const result = routePreToolUse("Bash", {
+        command: "curl -s -o /tmp/data.json https://example.com/data.json 2>&1",
+      });
+      expect(result).toBeNull();
+    });
+
     it("blocks curl -o - (stdout alias)", () => {
       const result = routePreToolUse("Bash", {
         command: "curl -s -o - https://example.com",

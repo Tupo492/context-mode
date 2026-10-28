@@ -909,8 +909,9 @@ describe("ContextModePlugin", () => {
       const joined = out.system.join("\n");
       expect(joined).toContain("<context_window_protection>");
       expect(joined).toContain("<priority_instructions>");
-      // platform-specific tool name proves createToolNamer wired correctly
-      expect(joined).toContain("context-mode_ctx_search");
+      // OpenCode registers ctx_* natively, so the routing block uses bare names
+      expect(joined).toContain("ctx_search");
+      expect(joined).not.toContain("context-mode_ctx_search");
     });
 
     it("OC-1: re-injects routing block on every turn (per-turn reliability)", async () => {
@@ -1347,5 +1348,59 @@ describe("ContextModePlugin", () => {
       expect(out.system.length).toBe(2);
       expect(out.system[1]).toBe(agentsContent);
     });
+  });
+});
+
+describe("OpenCode V2 setup", () => {
+  async function setupV2() {
+    const { default: plugin } = await import("../src/adapters/opencode/plugin.js");
+    const tools: Record<string, any> = {};
+    const hooks: Record<string, (event: any) => Promise<void>> = {};
+    await (plugin as any).setup({
+      location: { directory: tmpdir() },
+      tool: {
+        transform: async (edit: (editor: any) => void) => edit({ add: (t: any) => { tools[t.name] = t; } }),
+        hook: async (name: string, cb: (event: any) => Promise<void>) => { hooks[`tool.${name}`] = cb; },
+      },
+      session: {
+        hook: async (name: string, cb: (event: any) => Promise<void>) => { hooks[name] = cb; },
+      },
+    });
+    return { tools, hooks };
+  }
+
+  it("advertises MCP readiness so curl/wget redirects are active", async () => {
+    const { sentinelPathForPid } = await import("../hooks/core/mcp-ready.mjs");
+    const sentinel = sentinelPathForPid(process.pid);
+    try { unlinkSync(sentinel); } catch { /* not present */ }
+    const { hooks } = await setupV2();
+    expect(existsSync(sentinel)).toBe(true);
+
+    const input: Record<string, unknown> = { command: "curl -s https://example.com" };
+    await hooks["tool.execute.before"]({ tool: "shell", sessionID: "v2-sentinel-sess", id: "c1", input });
+    expect(String(input.command)).toContain("curl/wget redirected");
+    expect(String(input.command)).toContain("Call ctx_execute(");
+    expect(String(input.command)).not.toContain("context-mode_ctx_execute");
+
+    const merged: Record<string, unknown> = { command: "curl -s https://example.com 2>&1 | head -50" };
+    await hooks["tool.execute.before"]({ tool: "shell", sessionID: "v2-sentinel-sess", id: "c2", input: merged });
+    expect(String(merged.command)).toContain("curl/wget redirected");
+  });
+
+  it("registers native tools and hooks, and injects routing into the context hook", async () => {
+    const { tools, hooks } = await setupV2();
+
+    expect(tools.ctx_execute.input.type).toBe("object");
+    expect(hooks.context).toBeTypeOf("function");
+    expect(hooks.prompt).toBeTypeOf("function");
+    expect(hooks["tool.execute.before"]).toBeTypeOf("function");
+    expect(hooks["tool.execute.after"]).toBeTypeOf("function");
+    expect(hooks.compaction).toBeTypeOf("function");
+
+    const system = [{ type: "text", text: "HEADER" }];
+    await hooks.context({ sessionID: "v2-setup-sess", model: {}, system });
+    const text = system.map((p) => p.text).join("\n");
+    expect(text).toContain("<context_window_protection>");
+    expect(text).not.toContain("context-mode_ctx_");
   });
 });
