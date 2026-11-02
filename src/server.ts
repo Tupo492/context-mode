@@ -67,6 +67,7 @@ import { detectPlatform, getSessionDirSegments } from "./adapters/detect.js";
 import { parseCodexContextModePluginRoot } from "./adapters/codex/index.js";
 import { getHookScriptPaths } from "./util/hook-config.js";
 import { stripJsonComments } from "./util/jsonc.js";
+import { hasContextModePlugin as settingsHasContextModePlugin } from "./util/opencode-plugins.js";
 import { resolveClaudeConfigDir } from "./util/claude-config.js";
 import { resolveProjectDir } from "./util/project-dir.js";
 import { loadDatabase } from "./db-base.js";
@@ -181,11 +182,6 @@ function readNativePluginHostSettings(platform: PlatformId): Record<string, unkn
     } catch { /* try next config path */ }
   }
   return null;
-}
-
-function settingsHasContextModePlugin(settings: Record<string, unknown> | null | undefined): boolean {
-  const plugins = settings?.plugin;
-  return Array.isArray(plugins) && plugins.some((p) => typeof p === "string" && p.includes("context-mode"));
 }
 
 function settingsHasLegacyContextModeMcp(settings: Record<string, unknown> | null | undefined): boolean {

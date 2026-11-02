@@ -477,11 +477,11 @@ Full configs: [`configs/cursor/hooks.json`](configs/cursor/hooks.json) | [`confi
    ```json
    {
      "$schema": "https://opencode.ai/config.json",
-     "plugin": ["context-mode"]
+     "plugins": ["context-mode"]
    }
    ```
 
-   The `plugin` entry registers all 11 `ctx_*` tools natively and enables hooks — OpenCode calls context-mode's TypeScript plugin in-process, so there is no redundant stdio MCP child per session.
+   The `plugins` entry registers all 11 `ctx_*` tools natively and enables hooks — OpenCode calls context-mode's TypeScript plugin in-process, so there is no redundant stdio MCP child per session.
 
 2. *(Optional)* Copy the routing rules file. The model needs an `AGENTS.md` file for routing awareness:
 
@@ -495,7 +495,7 @@ Full configs: [`configs/cursor/hooks.json`](configs/cursor/hooks.json) | [`confi
 
 **Verify:** In the OpenCode session, type `ctx stats`. Context-mode tools should appear and respond.
 
-**Upgrade note:** If an existing config has BOTH `plugin: ["context-mode"]` AND `mcp.context-mode`, OpenCode will register zero `ctx_*` tools — the plugin path correctly suppresses MCP duplicates, but the legacy MCP entry confuses the loader. Run `context-mode upgrade` to remove the legacy `mcp.context-mode` entry; your other MCP servers are preserved. v1.0.140+ emits a stderr diagnostic with the same guidance when this happens.
+**Upgrade note:** If an existing config has BOTH `plugins: ["context-mode"]` AND `mcp.context-mode`, OpenCode will register zero `ctx_*` tools — the plugin path correctly suppresses MCP duplicates, but the legacy MCP entry confuses the loader. Run `context-mode upgrade` to remove the legacy `mcp.context-mode` entry; your other MCP servers are preserved. v1.0.140+ emits a stderr diagnostic with the same guidance when this happens.
 
 **Routing:** Hooks enforce routing programmatically via `tool.execute.before` and `tool.execute.after`. The optional [`AGENTS.md`](configs/opencode/AGENTS.md) file provides routing instructions for model awareness. The `experimental.session.compacting` hook builds resume snapshots when the conversation compacts. The `experimental.chat.system.transform` hook injects the routing block and prior-session snapshots at session start, enabling session continuity across restarts. The `chat.message` hook captures user prompts and decisions (UserPromptSubmit equivalent).
 

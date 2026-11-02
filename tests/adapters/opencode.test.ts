@@ -226,6 +226,73 @@ describe("OpenCodeAdapter", () => {
       rmSync(root, { recursive: true, force: true });
     });
 
+    it("configureAllHooks defaults to the V2 plugins key on a fresh OpenCode config", () => {
+      const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
+      const dir = join(root, "project");
+      const home = join(root, "home");
+      const conf = join(home, ".config", "opencode");
+      const file = join(conf, "opencode.json");
+      const src = resolve(process.cwd(), "src", "adapters", "opencode", "index.ts");
+      const tsx = resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      mkdirSync(dir, { recursive: true });
+      mkdirSync(conf, { recursive: true });
+      writeFileSync(
+        file,
+        JSON.stringify({ $schema: "https://opencode.ai/config.json" }, null, 2) + "\n",
+      );
+      const run = spawnSync(
+        process.execPath,
+        [
+          tsx,
+          "-e",
+          `import { OpenCodeAdapter } from ${JSON.stringify(src)};const a=new OpenCodeAdapter();console.log(JSON.stringify(a.configureAllHooks('/tmp/plugin')))`,
+        ],
+        { cwd: dir, env: env(home), encoding: "utf-8" },
+      );
+
+      expect(run.status).toBe(0);
+      expect(JSON.parse(run.stdout)).toEqual(["Added context-mode to plugins array"]);
+      expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual({
+        $schema: "https://opencode.ai/config.json",
+        plugins: ["context-mode"],
+      });
+
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it("detects context-mode in V2 plugins (object entries) without duplicating it", () => {
+      const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
+      const dir = join(root, "project");
+      const home = join(root, "home");
+      const conf = join(home, ".config", "opencode");
+      const file = join(conf, "opencode.json");
+      const src = resolve(process.cwd(), "src", "adapters", "opencode", "index.ts");
+      const tsx = resolve(process.cwd(), "node_modules", "tsx", "dist", "cli.mjs");
+      mkdirSync(dir, { recursive: true });
+      mkdirSync(conf, { recursive: true });
+      const initial = {
+        plugins: [{ package: "context-mode", options: { enabled: true } }],
+      };
+      writeFileSync(file, JSON.stringify(initial, null, 2) + "\n");
+      const run = spawnSync(
+        process.execPath,
+        [
+          tsx,
+          "-e",
+          `import { OpenCodeAdapter } from ${JSON.stringify(src)};const a=new OpenCodeAdapter();const changes=a.configureAllHooks('/tmp/plugin');const check=a.checkPluginRegistration();console.log(JSON.stringify({changes,check}))`,
+        ],
+        { cwd: dir, env: env(home), encoding: "utf-8" },
+      );
+
+      expect(run.status).toBe(0);
+      const out = JSON.parse(run.stdout);
+      expect(out.changes).toEqual(["context-mode already in plugins array"]);
+      expect(out.check.status).toBe("pass");
+      expect(JSON.parse(readFileSync(file, "utf-8"))).toEqual(initial);
+
+      rmSync(root, { recursive: true, force: true });
+    });
+
     it("configureAllHooks removes legacy context-mode MCP block for plugin-only mode (#574)", () => {
       const root = mkdtempSync(join(tmpdir(), "opencode-adapter-"));
       const dir = join(root, "project");

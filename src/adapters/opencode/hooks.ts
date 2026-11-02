@@ -12,7 +12,7 @@
  *   - Arg modification: output.args mutation
  *   - Blocking: throw Error in tool.execute.before
  *   - SessionStart: broken (#14808, no hook #5409)
- *   - Config: opencode.json plugin array, .opencode/plugins/*.ts
+ *   - Config: opencode.json `plugins` array (V2) / `plugin` array (V1), .opencode/plugins/*.ts
  */
 
 // ─────────────────────────────────────────────────────────
@@ -51,7 +51,8 @@ export const OPTIONAL_HOOKS: HookType[] = [
 
 /**
  * Check if an OpenCode plugin entry is the context-mode plugin.
- * OpenCode plugins are registered as strings in the plugin array.
+ * OpenCode plugins are registered as strings (or V2 `{ package, options }`
+ * objects) in the `plugins` array (V1/KiloCode: `plugin`).
  */
 export function isContextModePlugin(pluginEntry: string): boolean {
   return pluginEntry.includes("context-mode");

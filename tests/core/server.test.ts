@@ -5067,6 +5067,16 @@ test("OpenCode/Kilo legacy MCP child suppresses ctx_* tool registration while em
   expect(shouldSuppressMcpToolsForNativePluginHost({ platform: "opencode", settings: legacySettings })).toBe(true);
   expect(shouldSuppressMcpToolsForNativePluginHost({ platform: "kilo", settings: legacySettings })).toBe(true);
   expect(shouldSuppressMcpToolsForNativePluginHost({ platform: "opencode", settings: { plugin: ["context-mode"] } })).toBe(false);
+  // OpenCode V2 uses `plugins` (with optional object entries) instead of `plugin`.
+  expect(shouldSuppressMcpToolsForNativePluginHost({
+    platform: "opencode",
+    settings: { plugins: ["context-mode"], mcp: { "context-mode": { type: "local", command: ["context-mode"] } } },
+  })).toBe(true);
+  expect(shouldSuppressMcpToolsForNativePluginHost({
+    platform: "opencode",
+    settings: { plugins: [{ package: "context-mode" }], mcp: { "context-mode": { type: "local", command: ["context-mode"] } } },
+  })).toBe(true);
+  expect(shouldSuppressMcpToolsForNativePluginHost({ platform: "opencode", settings: { plugins: ["context-mode"] } })).toBe(false);
   expect(shouldSuppressMcpToolsForNativePluginHost({ platform: "opencode", embedded: "1", settings: legacySettings })).toBe(false);
   expect(shouldSuppressMcpToolsForNativePluginHost({ platform: "claude-code", embedded: undefined })).toBe(false);
 });
@@ -5098,7 +5108,8 @@ test("OpenCode legacy MCP suppression parses JSONC URLs without stripping // ins
 // string values ("[1, ]" -> "[1 ]"). That corruption always leaves the JSON
 // valid (only the comma char is deleted; the anchoring bracket stays), and
 // shouldSuppressMcpToolsForNativePluginHost() — the only public surface over
-// readNativePluginHostSettings() — checks just the plugin array for a
+// readNativePluginHostSettings() — checks the plugin entries (`plugins` on V2,
+// `plugin` on V1/Kilo) for a
 // "context-mode" substring and the mcp object for a "context-mode" key, so a
 // deleted in-string comma can never flip the boolean ("context-mode" contains
 // no comma to delete and no bracket to leave behind). Pin the fix

@@ -49,7 +49,7 @@ This puts the `context-mode` binary in PATH, which is required for:
 | **Project dir env** | `CLAUDE_PROJECT_DIR` | `QWEN_PROJECT_DIR` | `GEMINI_PROJECT_DIR` | `CLAUDE_PROJECT_DIR` | `CLAUDE_PROJECT_DIR` | stdin `cwd` | stdin `workspace_roots` | `ctx.directory` (plugin init) | `ctx.directory` (plugin init) | `process.cwd()` | N/A | stdin `cwd` | N/A | stdin `workspace.current_dir` (refs-backed; `workspacePaths[0]` fallback) | stdin `cwd` | N/A | N/A | `OMP_PROCESSING_AGENT_DIR` |
 | **MCP/tool naming** | `mcp__server__tool` | `mcp__server__tool` | `mcp__server__tool` | `f1e_` prefix | `f1e_` prefix | `mcp__server__tool` | `MCP:<tool>` in hook payloads | native `ctx_*` plugin tools | native `ctx_*` plugin tools | native `ctx_*` plugin tools | `mcp__server__tool` | `mcp__context-mode__tool` | `mcp__server__tool` | `context-mode/<tool>` | `mcp__server__tool` | `mcp__server__tool` | `mcp__server__tool` | `mcp__server__tool` |
 | **Hook command format** | `context-mode hook claude-code <event>` | `context-mode hook qwen-code <event>` | `context-mode hook gemini-cli <event>` | `context-mode hook vscode-copilot <event>` | `context-mode hook jetbrains-copilot <event>` | `context-mode hook copilot-cli <event>` | `context-mode hook cursor <event>` | TS plugin (no command) | TS plugin (no command) | TS plugin (no command) | `context-mode hook codex <event>` | `context-mode hook kimi <event>` | N/A | `context-mode hook antigravity-cli <event>` | `context-mode hook kiro <event>` | N/A | N/A | N/A |
-| **Hook registration** | settings.json hooks object | settings.json hooks object | settings.json hooks object | `.github/hooks/*.json` | `.github/hooks/*.json` | `~/.copilot/hooks/context-mode.json` (`version: 1`) | `hooks.json` native hook arrays | opencode.json plugin array | kilo.json plugin array | openclaw.json `plugins.entries` | `~/.codex/hooks.json` | `config.toml` hooks array | N/A | plugin root `hooks.json` (`PreToolUse`, `PostToolUse`, `Stop`; bundle mirrors `hooks/hooks.json` for agy validate/install) | Kiro CLI hooks (JSON stdin) | N/A | N/A | N/A |
+| **Hook registration** | settings.json hooks object | settings.json hooks object | settings.json hooks object | `.github/hooks/*.json` | `.github/hooks/*.json` | `~/.copilot/hooks/context-mode.json` (`version: 1`) | `hooks.json` native hook arrays | opencode.json `plugins` array | kilo.json plugin array | openclaw.json `plugins.entries` | `~/.codex/hooks.json` | `config.toml` hooks array | N/A | plugin root `hooks.json` (`PreToolUse`, `PostToolUse`, `Stop`; bundle mirrors `hooks/hooks.json` for agy validate/install) | Kiro CLI hooks (JSON stdin) | N/A | N/A | N/A |
 | **MCP server command** | `context-mode` (or plugin auto) | `context-mode` | `context-mode` | `context-mode` | `context-mode` | `context-mode` | `context-mode` | N/A (native plugin tools) | N/A (native plugin tools) | N/A (native plugin tools) | `context-mode` | `context-mode` | `context-mode` | `context-mode` | `context-mode` | `context-mode` | `context-mode` | `context-mode` |
 | **Plugin distribution** | Claude plugin registry | npm global | npm global | npm global | npm global | npm global | npm global | npm global | npm global | npm global | npm global | npm global | npm global | agy plugin (npm global) | npm global | npm global | npm global | npm global |
 | **Session dir** | `~/.claude/context-mode/sessions/` | `~/.qwen/context-mode/sessions/` | `~/.gemini/context-mode/sessions/` | `.github/context-mode/sessions/` or `~/.vscode/context-mode/sessions/` | `.github/context-mode/sessions/` | `~/.copilot/context-mode/sessions/` | `~/.cursor/context-mode/sessions/` | `~/.config/opencode/context-mode/sessions/` | `~/.config/kilo/context-mode/sessions/` | `~/.openclaw/context-mode/sessions/` | `~/.codex/context-mode/sessions/` | `~/.kimi-code/context-mode/sessions/` | `~/.gemini/context-mode/sessions/` | `~/.gemini/context-mode/sessions/` | `~/.kiro/context-mode/sessions/` | `~/.config/zed/context-mode/sessions/` | `~/.pi/context-mode/sessions/` | `~/.omp/context-mode/sessions/` |
@@ -150,7 +150,7 @@ context-mode hook gemini-cli sessionstart
 
 **Hook Paradigm:** TS Plugin
 
-OpenCode uses a TypeScript plugin paradigm instead of JSON stdin/stdout. Hooks and the 11 `ctx_*` tools are registered via the `plugin` array in `opencode.json`; no separate `mcp` block or stdio MCP child is required.
+OpenCode uses a TypeScript plugin paradigm instead of JSON stdin/stdout. Hooks and the 11 `ctx_*` tools are registered via the `plugins` array in `opencode.json`; no separate `mcp` block or stdio MCP child is required.
 
 **Hook Names:**
 - `tool.execute.before` -- equivalent to PreToolUse
@@ -172,7 +172,7 @@ OpenCode uses a TypeScript plugin paradigm instead of JSON stdin/stdout. Hooks a
 
 **Configuration:**
 - `opencode.json` or `.opencode/opencode.json`
-- Plugin registered in the `plugin` array with npm package names
+- Plugin registered in the `plugins` array with npm package names
 - `ctx_*` tools are native plugin tools, not `mcp__server__tool` calls
 - KiloCode uses the same plugin path via `kilo.json`; `context-mode upgrade` removes stale `mcp.context-mode` entries for both hosts while preserving other MCP servers
 

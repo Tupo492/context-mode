@@ -12,7 +12,7 @@
  *   - SessionStart: broken (#14808, no hook #5409)
  *   - Session ID: input.sessionID (camelCase!)
  *   - Project dir: ctx.directory in plugin init (no env var)
- *   - Config: opencode.json plugin array, .opencode/plugins/*.ts
+ *   - Config: opencode.json `plugins` array (V2) / `plugin` array (V1), .opencode/plugins/*.ts
  *   - Session dir: ~/.config/opencode/context-mode/sessions/
  */
 
@@ -30,6 +30,11 @@ import { homedir } from "node:os";
 
 import { BaseAdapter, resolveContextModeDataRoot } from "../base.js";
 import { stripJsonComments } from "../../util/jsonc.js";
+import {
+  hasContextModePlugin,
+  pluginConfigKey,
+  pluginEntryName,
+} from "../../util/opencode-plugins.js";
 
 import type {
   HookAdapter,
@@ -305,7 +310,8 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
   }
 
   generateHookConfig(_pluginRoot: string): HookRegistration {
-    // OpenCode uses TS plugin paradigm — hooks are registered via plugin array
+    // OpenCode uses TS plugin paradigm — hooks are registered via the `plugins`
+    // array (V2) or the deprecated `plugin` array (V1/KiloCode)
     // in opencode.json, not via command-based hook entries.
     // Return the hook name mapping for documentation purposes.
     return {
@@ -365,7 +371,7 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
 
         const isGlobalConfig = globalPaths.has(configPath);
 
-        if (this.hasContextModePlugin(settings) || isGlobalConfig) {
+        if (hasContextModePlugin(settings) || isGlobalConfig) {
           this.settingsPath = configPath;
           return settings;
         }
@@ -406,15 +412,17 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
       return results;
     }
 
-    // Check for "context-mode" in plugin array
-    const hasPlugin = this.hasContextModePlugin(settings);
-    if (Array.isArray(settings.plugin)) {
+    // Check for "context-mode" in the plugin array (`plugins` on V2,
+    // `plugin` on V1/KiloCode).
+    const pluginKey = pluginConfigKey(settings, this.platform);
+    const hasPlugin = hasContextModePlugin(settings);
+    if (Array.isArray(settings[pluginKey])) {
       results.push({
         check: "Plugin registration",
         status: hasPlugin ? "pass" : "fail",
         message: hasPlugin
-          ? "context-mode found in plugin array"
-          : "context-mode not found in plugin array",
+          ? `context-mode found in ${pluginKey} array`
+          : `context-mode not found in ${pluginKey} array`,
         fix: hasPlugin
           ? undefined
           : "context-mode upgrade",
@@ -423,7 +431,7 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
       results.push({
         check: "Plugin registration",
         status: "fail",
-        message: `No plugin array found in ${this.platform}.json or ${this.platform}.jsonc`,
+        message: `No ${pluginKey} array found in ${this.platform}.json or ${this.platform}.jsonc`,
         fix: "context-mode upgrade",
       });
     }
@@ -458,18 +466,18 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
       };
     }
 
-    if (this.hasContextModePlugin(settings)) {
+    if (hasContextModePlugin(settings)) {
       return {
         check: "Plugin registration",
         status: "pass",
-        message: "context-mode found in plugin array",
+        message: `context-mode found in ${pluginConfigKey(settings, this.platform)} array`,
       };
     }
 
     return {
       check: "Plugin registration",
       status: "fail",
-      message: `context-mode not found in ${this.platform}.json plugin array`,
+      message: `context-mode not found in ${this.platform}.json ${pluginConfigKey(settings, this.platform)} array`,
       fix: "context-mode upgrade",
     };
   }
@@ -499,16 +507,23 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
     const settings = this.readSettings() ?? {};
     const changes: string[] = [];
 
-    // Add "context-mode" to the plugin array
-    const plugins = (settings.plugin ?? []) as string[];
-    if (!plugins.some((p) => p.includes("context-mode"))) {
+    // Add "context-mode" to the plugin array. V2 OpenCode uses `plugins`;
+    // V1/KiloCode use `plugin`. Preserve whichever key the config already has.
+    const pluginKey = pluginConfigKey(settings, this.platform);
+    const plugins = Array.isArray(settings[pluginKey])
+      ? [...(settings[pluginKey] as unknown[])]
+      : [];
+    const alreadyRegistered = plugins.some((entry) =>
+      (pluginEntryName(entry) ?? "").includes("context-mode"),
+    );
+    if (!alreadyRegistered) {
       plugins.push("context-mode");
-      changes.push("Added context-mode to plugin array");
+      changes.push(`Added context-mode to ${pluginKey} array`);
     } else {
-      changes.push("context-mode already in plugin array");
+      changes.push(`context-mode already in ${pluginKey} array`);
     }
 
-    settings.plugin = plugins;
+    settings[pluginKey] = plugins;
 
     const mcp = settings.mcp;
     if (mcp && typeof mcp === "object" && !Array.isArray(mcp)) {
@@ -553,14 +568,6 @@ export class OpenCodeAdapter extends BaseAdapter implements HookAdapter {
   }
 
   // ── Internal helpers ───────────────────────────────────
-
-  /**
-   * Check whether a settings object has the context-mode plugin registered.
-   */
-  private hasContextModePlugin(settings: Record<string, unknown>): boolean {
-    const plugins = settings.plugin;
-    return Array.isArray(plugins) && plugins.some((p: unknown) => typeof p === "string" && p.includes("context-mode"));
-  }
 
   private hasLegacyContextModeMcp(settings: Record<string, unknown>): boolean {
     const mcp = settings.mcp;
